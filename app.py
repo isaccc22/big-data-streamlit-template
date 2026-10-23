@@ -83,16 +83,14 @@ def demo_dataframe(hours: int = 24) -> pd.DataFrame:
     end = pd.Timestamp.now(tz="UTC").floor("15s")
     ts = pd.date_range(end=end, periods=hours * 240, freq="15s")
     frames = []
-    for sensor, base, vol in (("bitcoin", 68000, 40), ("ethereum", 2600, 4), ("solana", 160, 0.6)):
-        walk = base + np.cumsum(rng.normal(0, vol, len(ts)))
-        frames.append(pd.DataFrame({"timestamp": ts, "value": walk.round(2), "metric_type": "price_usd",
-                                    "sensor_id": sensor, "source": "demo", "unit": "USD",
-                                    "location": "demo", "latitude": np.nan, "longitude": np.nan}))
-    t = np.arange(len(ts))
-    frames.append(pd.DataFrame({"timestamp": ts, "value": 420 + 3 * np.sin(t / 60) + rng.normal(0, .2, len(ts)),
-                                "metric_type": "altitude_km", "sensor_id": "iss", "source": "demo",
-                                "unit": "km", "location": "orbit",
-                                "latitude": 51.6 * np.sin(t / 90), "longitude": ((t * 0.5) % 360) - 180}))
+    cities = (("manila", 28, 0.35, 14.60, 120.98), ("quezon_city", 24, 0.30, 14.68, 121.04),
+              ("cebu_city", 15, 0.25, 10.32, 123.89))
+    for city, base, vol, lat, lon in cities:
+        walk = np.clip(base + np.cumsum(rng.normal(0, vol, len(ts))), 2, None)
+        frames.append(pd.DataFrame({"timestamp": ts, "value": walk.round(2), "metric_type": "pm2_5",
+                                    "sensor_id": city, "source": "demo", "unit": "μg/m³",
+                                    "location": city.replace("_", " ").title(),
+                                    "latitude": lat, "longitude": lon}))
     return pd.concat(frames, ignore_index=True)[LIVE_COLUMNS]
 
 
@@ -309,7 +307,7 @@ def display_real_time_view(cfg: Dict) -> None:
 
         f1, f2, f3 = st.columns([2, 3, 2])
         metrics = sorted(df["metric_type"].unique())
-        metric = f1.selectbox("Metric", metrics, index=metrics.index("price_usd") if "price_usd" in metrics else 0,
+        metric = f1.selectbox("Metric", metrics, index=metrics.index(next((m for m in ("pm2_5", "price_usd") if m in metrics), metrics[0])),
                               key="live_metric")
         msub = df[df["metric_type"] == metric]
         sensors = sorted(msub["sensor_id"].unique())
@@ -466,7 +464,7 @@ def display_historical_view(cfg: Dict) -> None:
                 border=True)
 
     opts = sorted(df["metric_type"].unique())
-    metric = st.selectbox("Chart metric", opts, index=opts.index("price_usd") if "price_usd" in opts else 0,
+    metric = st.selectbox("Chart metric", opts, index=opts.index(next((m for m in ("pm2_5", "price_usd") if m in opts), opts[0])),
                           key="hist_chart_metric")
     sub = df[df["metric_type"] == metric]
     if len(sub) > 6000:  # keep the browser fast; table + export still hold everything
@@ -555,7 +553,7 @@ def display_about() -> None:
     st.graphviz_chart(
         """digraph G { rankdir=LR; node [shape=box, style="rounded,filled", fillcolor="#EFF6FF",
         color="#2563EB", fontname="Helvetica"]; edge [color="#64748B"];
-        API [label="Public APIs\\n(CoinGecko, ISS,\\nOpen-Meteo, USGS)"];
+        API [label="Open-Meteo API\\n(air quality)"];
         P [label="Producer\\n(producer.py)"]; K [label="Kafka\\ntopic"];
         S [label="Spark Structured\\nStreaming"]; M [label="MongoDB\\nreadings + aggregates"];
         D [label="Streamlit\\ndashboard"];
@@ -564,7 +562,7 @@ def display_about() -> None:
     )
     st.markdown(
         """
-**Pipeline** - A producer polls free public APIs every 15 s and publishes JSON messages to **Kafka**.
+**Pipeline** - A producer polls a free public API (every 60 s by default) and publishes JSON messages to **Kafka**.
 **Spark Structured Streaming** validates the messages, stores every record in **MongoDB** and computes
 windowed aggregates (avg / min / max / std / count). **Streamlit** reads Kafka directly for the live view
 and MongoDB for history and aggregation.

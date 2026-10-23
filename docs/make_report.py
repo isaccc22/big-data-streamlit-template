@@ -65,7 +65,7 @@ def placeholder(text):
 def architecture_png():
     fig, ax = plt.subplots(figsize=(11, 3.2))
     ax.set_xlim(0, 110); ax.set_ylim(0, 32); ax.axis("off")
-    boxes = [(2, "Public APIs\nCoinGecko · ISS\nOpen-Meteo · USGS", "#DBEAFE"), (24, "Kafka Producer\nproducer.py\n(every 15 s)", "#DBEAFE"),
+    boxes = [(2, "Open-Meteo API\n(air quality)\n5 PH cities", "#DBEAFE"), (24, "Kafka Producer\nproducer.py\n(every 60 s)", "#DBEAFE"),
              (46, "Apache Kafka\ntopic\nstreaming-data", "#FEF3C7"), (68, "Spark Structured\nStreaming\nspark_job.py", "#FFEDD5"),
              (90, "MongoDB\nreadings +\naggregates", "#DCFCE7")]
     for x, label, fc in boxes:
@@ -101,14 +101,14 @@ s += [P("1. Objective", h1),
         "data export.")]
 
 s += [P("2. API Used", h1),
-      P("The producer polls free, key-less public APIs. Two are enabled by default and two more can be switched on with a single "
+      P("The producer polls the free, key-less <b>Open-Meteo Air Quality API</b>. Three more APIs are built in and can be switched on with a single "
         "setting (<font face='Courier'>DATA_SOURCE</font>) because every API is wrapped by the same adapter interface."),
       table([["API", "Endpoint", "Data collected", "Notes"],
-             ["CoinGecko (default)", "api.coingecko.com/api/v3/simple/price", "USD & PHP price and 24 h change for Bitcoin, Ethereum, Solana, Dogecoin, XRP",
+             ["CoinGecko (optional)", "api.coingecko.com/api/v3/simple/price", "USD & PHP price and 24 h change for Bitcoin, Ethereum, Solana, Dogecoin, XRP",
               "No key; free tier is rate-limited; prices refresh roughly every 30-60 s"],
-             ["wheretheiss.at (default)", "api.wheretheiss.at/v1/satellites/25544", "ISS latitude, longitude, altitude (km), velocity (km/h)",
+             ["wheretheiss.at (optional)", "api.wheretheiss.at/v1/satellites/25544", "ISS latitude, longitude, altitude (km), velocity (km/h)",
               "No key; ~1 request/s limit; changes every second"],
-             ["Open-Meteo Air Quality (optional)", "air-quality-api.open-meteo.com/v1/air-quality", "PM2.5, PM10, US AQI, O3, NO2, CO for 5 Philippine cities",
+             ["Open-Meteo Air Quality (default)", "air-quality-api.open-meteo.com/v1/air-quality", "PM2.5, PM10, US AQI, O3, NO2, CO for 5 Philippine cities",
               "No key; hourly model data"],
              ["USGS Earthquake (optional)", "earthquake.usgs.gov/fdsnws/event/1/query", "Magnitude and depth of earthquakes around the Philippines",
               "No key; event-driven, de-duplicated by event id"]], [3.3 * cm, 4.6 * cm, 5 * cm, 3.6 * cm]),
@@ -123,9 +123,9 @@ s += [P("3. Pipeline Implemented: MongoDB - Kafka - Spark", h1),
       Image(io.BytesIO(architecture_png()), width=17 * cm, height=17 * cm * 0.34),
       P("Figure 1. System architecture.", cap),
       table([["Stage", "Technology / file", "Role"],
-             ["Ingest", "Python producer (producer.py, sources.py)", "Polls the API every 15 s with retry/back-off; a failing API never stops the others; publishes JSON keyed by sensor_id."],
+             ["Ingest", "Python producer (producer.py, sources.py)", "Polls the Open-Meteo Air Quality API every 60 s with retry/back-off; a failing API never stops the others; publishes JSON keyed by sensor_id."],
              ["Buffer", "Apache Kafka (topic streaming-data)", "Durable, ordered, decoupled message log; lets the dashboard and Spark consume independently."],
-             ["Process", "Spark Structured Streaming (spark_job.py)", "Parses and validates JSON, drops malformed records, writes each valid record to MongoDB, and computes 1-minute tumbling-window aggregates (avg, min, max, std, count) with a 2-minute watermark."],
+             ["Process", "Spark Structured Streaming (spark_job.py)", "Parses and validates JSON, drops malformed records, writes each valid record to MongoDB, and computes 5-minute tumbling-window aggregates (avg, min, max, std, count) with a 10-minute watermark."],
              ["Store", "MongoDB (storage.py)", "Collections <i>readings</i> (raw history) and <i>aggregates</i> (Spark windows). Upserts keyed by record_id make replays idempotent; compound indexes speed time-range queries."],
              ["Serve", "Streamlit + Plotly (app.py)", "Live view reads Kafka directly; History and Aggregation views query MongoDB; exports via exporters.py."]],
             [2.2 * cm, 4.8 * cm, 9.5 * cm]),
@@ -136,10 +136,10 @@ s += [P("3. Pipeline Implemented: MongoDB - Kafka - Spark", h1),
         "without redesigning the application.")]
 
 s += [P("4. Dashboard Features", h1),
-      *bullets(["<b>Live view</b> - auto-refreshes every 15 s (adjustable, pausable) using Streamlit fragments so only the live panel reloads; per-sensor KPI cards with change since the last reading; trend chart; geographic map with trail for position data; automatic fall-back to MongoDB if Kafka is unreachable.",
+      *bullets(["<b>Live view</b> - auto-refreshes every 15 s (adjustable, pausable) using Streamlit fragments so only the live panel reloads; per-sensor KPI cards with change since the last reading; trend chart; automatic fall-back to MongoDB if Kafka is unreachable.",
                 "<b>History view</b> - presents <i>all</i> collected records with filters for time range, metric, sensor and API source; summary statistics; distribution plot; full sortable table.",
                 "<b>Aggregation (additional points)</b> - Spark window aggregates from MongoDB, plus an interactive roll-up from 1 minute to 1 day with avg/min/max/std/count and a min-max band.",
-                "<b>UI/UX (additional points)</b> - status badges for data mode, KPI cards, index-to-100 comparison when sensors have very different scales (e.g. BTC vs SOL), time-zone selector (default Asia/Manila), responsive layout, clear banners when demo data is shown.",
+                "<b>UI/UX (additional points)</b> - status badges for data mode, KPI cards, index-to-100 comparison when sensors have very different scales (e.g. sensors on different scales), time-zone selector (default Asia/Manila), responsive layout, clear banners when demo data is shown.",
                 "<b>Export (additional points)</b> - Excel (.xlsx) with formatted header, filters, summary sheet and native chart; PDF report with statistics, chart and latest rows; PNG and JPG chart images; CSV."]),
       Spacer(1, 4), placeholder("Live tab with KPI cards and trend chart"), Spacer(1, 4),
       placeholder("History tab with filters, summary and full table"), Spacer(1, 4),
@@ -164,9 +164,9 @@ s += [P("6. Testing", h1),
       placeholder("Terminal: producer sending records / Spark batch logs / MongoDB document count")]
 
 s += [P("7. Limitations and Future Work", h1),
-      *bullets(["Free APIs update at their own pace (e.g. CoinGecko about every 30-60 s), so consecutive 15 s polls can repeat a value.",
+      *bullets(["Open-Meteo air-quality values are model data that update about hourly, so consecutive polls can return the same numbers; the dashboard still refreshes every 15 s.",
                 "Spark writes each micro-batch to MongoDB through the driver; for much larger volumes the MongoDB Spark Connector should be used.",
-                "Late data beyond the 2-minute watermark is stored in <i>readings</i> but excluded from window aggregates.",
+                "Late data beyond the 10-minute watermark is stored in <i>readings</i> but excluded from window aggregates.",
                 "Future work: anomaly detection / alerting, multi-broker Kafka, authentication on the dashboard."])]
 
 s += [P("8. Conclusion", h1),

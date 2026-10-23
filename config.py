@@ -27,13 +27,13 @@ MONGO_AGGREGATES = _env("MONGO_AGGREGATES", "aggregates")  # Spark windows
 
 # --- Producer --------------------------------------------------------------
 # Comma-separated list of adapters from sources.py: crypto, iss, airquality, earthquake
-DATA_SOURCE = _env("DATA_SOURCE", "crypto,iss")
-POLL_INTERVAL = float(_env("POLL_INTERVAL", "15"))  # seconds between API calls
+DATA_SOURCE = _env("DATA_SOURCE", "airquality")
+POLL_INTERVAL = float(_env("POLL_INTERVAL", "60"))  # seconds between API calls
 COINGECKO_API_KEY = _env("COINGECKO_API_KEY", "")   # optional (free demo key)
 
 # --- Spark -----------------------------------------------------------------
-SPARK_WINDOW = _env("SPARK_WINDOW", "1 minute")
-SPARK_WATERMARK = _env("SPARK_WATERMARK", "2 minutes")
+SPARK_WINDOW = _env("SPARK_WINDOW", "5 minutes")
+SPARK_WATERMARK = _env("SPARK_WATERMARK", "10 minutes")
 SPARK_CHECKPOINT = _env("SPARK_CHECKPOINT", "./.checkpoints")
 SPARK_STARTING_OFFSETS = _env("SPARK_STARTING_OFFSETS", "latest")
 

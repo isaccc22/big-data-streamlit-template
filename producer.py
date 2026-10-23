@@ -8,9 +8,9 @@ each measurement as a JSON message.  Message schema:
       "record_id": "...",            # deterministic id (idempotent downstream)
       "timestamp": "2026-10-20T03:00:00.123Z",   # ISO-8601 UTC (ingest time)
       "value": 67890.12,             # numeric
-      "metric_type": "price_usd",
-      "sensor_id": "bitcoin",
-      "source": "crypto", "unit": "USD", "location": "...",
+      "metric_type": "pm2_5",
+      "sensor_id": "manila",
+      "source": "airquality", "unit": "μg/m³", "location": "...",
       "latitude": null, "longitude": null, "source_timestamp": "..."
     }
 
@@ -159,7 +159,7 @@ def parse_arguments() -> argparse.Namespace:
     p.add_argument("--source", default=config.DATA_SOURCE,
                    help="comma-separated: crypto, iss, airquality, earthquake")
     p.add_argument("--interval", type=float, default=config.POLL_INTERVAL,
-                   help="seconds between API polls (default 15)")
+                   help="seconds between API polls (default 60)")
     p.add_argument("--duration", type=int, default=None, help="run time in seconds (default: forever)")
     return p.parse_args()
 

@@ -5,18 +5,18 @@ A big-data streaming application that pulls **live data from public APIs**, push
 **Streamlit** dashboard (live view that refreshes every 15 s, full history, aggregation, and export).
 
 ```
- Public APIs ──► Producer ──► Kafka ──┬──► Spark Structured Streaming ──► MongoDB ──┐
- (CoinGecko, ISS,   (producer.py)     │   (validate · store · window aggregates)    │ history +
-  Open-Meteo, USGS)                   └────────────── live (direct consumer) ───────┴─► Streamlit
+ Open-Meteo API ──► Producer ──► Kafka ──┬──► Spark Structured Streaming ──► MongoDB ──┐
+ (air quality)     (producer.py)       │   (validate · store · window aggregates)    │ history +
+                                        └────────────── live (direct consumer) ───────┴─► Streamlit
 ```
 
 ## Pipeline chosen: **MongoDB – Kafka – Spark**
 
 | Stage | File | What it does |
 |---|---|---|
-| Ingest | `sources.py`, `producer.py` | Calls the API every 15 s, builds schema-conformant records, publishes JSON to Kafka (keyed by `sensor_id`) |
+| Ingest | `sources.py`, `producer.py` | Calls the API every 60 s, builds schema-conformant records, publishes JSON to Kafka (keyed by `sensor_id`) |
 | Buffer | Kafka topic `streaming-data` | Decouples producer from consumers; ordered per sensor |
-| Process | `spark_job.py` | Parses/validates JSON, upserts every record into `readings`, computes **1-minute window aggregates** (avg/min/max/std/count) into `aggregates` |
+| Process | `spark_job.py` | Parses/validates JSON, upserts every record into `readings`, computes **5-minute window aggregates** (avg/min/max/std/count) into `aggregates` |
 | Store | `storage.py`, MongoDB | Idempotent upserts (`_id = record_id`), indexed time-series queries |
 | Serve | `app.py`, `exporters.py` | Live / History / Aggregation / About tabs, Excel · PDF · PNG · JPG · CSV export |
 
@@ -25,13 +25,13 @@ A big-data streaming application that pulls **live data from public APIs**, push
 
 ## Data sources (all free, **no API key**)
 
-Set `DATA_SOURCE` in `.env` (comma-separated list works):
+The project uses **Open-Meteo Air Quality (`airquality`)** by default. The other adapters are optional; set `DATA_SOURCE` in `.env` (a comma-separated list works):
 
 | `DATA_SOURCE` | API | Metrics | Why it's interesting |
 |---|---|---|---|
-| `crypto` *(default)* | [CoinGecko](https://docs.coingecko.com/reference/simple-price) | `price_usd`, `price_php`, `change_24h_pct` for 5 coins | Market monitoring, volatility |
-| `iss` *(default)* | [wheretheiss.at](https://wheretheiss.at/w/developer) | `altitude_km`, `velocity_kmh` + lat/lon | Changes every second → very "live"; geo-map |
-| `airquality` | [Open-Meteo Air Quality](https://open-meteo.com/en/docs/air-quality-api) | PM2.5, PM10, US AQI, O₃, NO₂, CO for Manila, Quezon City, Cebu, Davao, Baguio | Public-health relevance |
+| `crypto` | [CoinGecko](https://docs.coingecko.com/reference/simple-price) | `price_usd`, `price_php`, `change_24h_pct` for 5 coins | Market monitoring, volatility |
+| `iss` | [wheretheiss.at](https://wheretheiss.at/w/developer) | `altitude_km`, `velocity_kmh` + lat/lon | Changes every second → very "live"; geo-map |
+| `airquality` *(default, the API used)* | [Open-Meteo Air Quality](https://open-meteo.com/en/docs/air-quality-api) | PM2.5, PM10, US AQI, O₃, NO₂, CO for Manila, Quezon City, Cebu, Davao, Baguio | Public-health relevance |
 | `earthquake` | [USGS Earthquake API](https://earthquake.usgs.gov/fdsnws/event/1/) | magnitude, depth for events around the Philippines | Event-driven data; disaster awareness |
 
 Other no-key APIs that would fit the same adapter pattern: Binance public tickers, Open-Meteo weather, NASA EONET, Frankfurter FX rates, OpenSky flights.
@@ -51,13 +51,13 @@ docker compose up -d          # Kafka (KRaft) on :9092, MongoDB on :27017
 ## Run (4 terminals)
 
 ```bash
-python producer.py            # 1. API → Kafka   (every 15 s)
+python producer.py            # 1. API → Kafka   (every 60 s)
 python spark_job.py           # 2. Kafka → Spark → MongoDB   (first run downloads the Kafka connector)
 streamlit run app.py          # 3. dashboard at http://localhost:8501
 ```
 
 Useful flags: `python producer.py --source airquality,earthquake --interval 30` ·
-`python spark_job.py --starting-offsets earliest --window "5 minutes"`
+`python spark_job.py --starting-offsets earliest --window "10 minutes"`
 
 > The dashboard runs even with nothing started: a sidebar toggle ("Use demo data when offline") shows
 > synthetic data so you can explore the UI. A banner always tells you when you are *not* looking at real data.
@@ -84,11 +84,11 @@ The Spark test starts a small local Spark session (needs Java). Tests use `mongo
 | Live tab says *cannot reach Kafka* | `docker compose up -d`; check `KAFKA_BOOTSTRAP` |
 | *topic not found yet* | start `producer.py` once (topic is auto-created) |
 | Spark can't download Kafka connector | needs internet on first run (`spark.jars.packages`) |
-| `crypto` returns HTTP 429 | CoinGecko free tier is rate-limited – raise `--interval` or set `COINGECKO_API_KEY` (free demo key) |
+| `airquality` returns HTTP 429 | Open-Meteo free tier allows ~10,000 calls/day – keep `--interval` at 60 s or more |
 | Windows + Spark errors | run Spark job inside WSL2 |
 | History empty but producer runs | the Spark job must be running – it is what writes to MongoDB |
 
 ## Notes & limits
 * Spark's foreachBatch writer collects each micro-batch to the driver before bulk-writing to MongoDB — fine for API-scale data (tens of records per batch); for very high volume switch to the MongoDB Spark Connector.
-* Window aggregates use event-time with a 2-minute watermark; records arriving later than that still land in `readings` but not in `aggregates`.
-* Public free APIs update at their own pace (e.g. CoinGecko ≈ every 30–60 s), so consecutive 15 s polls can repeat a value.
+* Window aggregates use event-time with a 10-minute watermark; records arriving later than that still land in `readings` but not in `aggregates`.
+* Open-Meteo air-quality values are model data that update about hourly, so consecutive polls often return the same numbers; the dashboard still refreshes every 15 s and shows new values as soon as they arrive.
